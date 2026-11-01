@@ -1,0 +1,2 @@
+# 로컬 개발용 (wrangler dev). 실제 값은 절대 커밋하지 말 것.
+GROQ_API_KEY=여기에_Groq_API_키

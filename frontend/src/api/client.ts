@@ -1,117 +1,168 @@
-import type { Project, StepArtifact, ChatMessage, KanbanCard, StickyNote, VibeRequest, StepInspection } from '../types'
+// API 레이어 — Firestore 직접 접근 + Cloudflare Worker(AI).
+// 외부에서 보는 `api` 객체 모양은 기존(백엔드 REST 시절)과 동일해서
+// 컴포넌트 코드는 수정 없이 그대로 동작한다.
 import { firebaseAuth } from '../auth/firebase'
+import { store } from '../lib/store'
+import { workerChat, workerComplete } from './ai'
+import { buildSystemPrompt, buildInitMessage, buildInspectPrompt, buildSuggestPrompt } from '../lib/prompts'
+import { extractArtifacts } from '../lib/extractArtifacts'
+import type {
+  Project,
+  StepArtifact,
+  ChatMessage,
+  KanbanCard,
+  StickyNote,
+  VibeRequest,
+  StepInspection,
+} from '../types'
 
-// 배포 시 frontend/.env.local에 VITE_API_URL=https://백엔드주소 로 지정
-const BASE = import.meta.env.VITE_API_URL ?? '/api'
-
-async function req<T>(url: string, opts?: RequestInit): Promise<T> {
-  const token = await firebaseAuth?.currentUser?.getIdToken()
-  const res = await fetch(`${BASE}${url}`, {
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...opts?.headers,
-    },
-    ...opts,
-  })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }))
-    throw new Error((err as any).error ?? res.statusText)
-  }
-  return res.json() as Promise<T>
+function uid(): string {
+  const id = firebaseAuth?.currentUser?.uid
+  if (!id) throw new Error('로그인이 필요합니다')
+  return id
 }
 
-// Projects
 export const api = {
   projects: {
-    list: () => req<Project[]>('/projects'),
-    get: (id: string) => req<Project>(`/projects/${id}`),
-    create: (data: { name: string; type?: string; description?: string }) =>
-      req<Project>('/projects', { method: 'POST', body: JSON.stringify(data) }),
-    update: (id: string, data: Partial<Project>) =>
-      req<Project>(`/projects/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
-    delete: (id: string) => req<{ ok: boolean }>(`/projects/${id}`, { method: 'DELETE' }),
+    list: (): Promise<Project[]> => store.projects.list(uid()),
+    get: (id: string): Promise<Project> => store.projects.get(id),
+    create: (data: { name: string; type?: string; description?: string }): Promise<Project> =>
+      store.projects.create(uid(), data),
+    update: (id: string, data: Partial<Project>): Promise<Project> => store.projects.update(id, data),
+    delete: (id: string): Promise<{ ok: boolean }> => store.projects.remove(id).then(() => ({ ok: true })),
   },
 
   artifacts: {
-    list: (projectId: string) => req<StepArtifact[]>(`/projects/${projectId}/artifacts`),
-    byStep: (projectId: string, step: number) =>
-      req<StepArtifact[]>(`/projects/${projectId}/artifacts/${step}`),
-    save: (projectId: string, data: { step: number; type: string; content: string }) =>
-      req<StepArtifact>(`/projects/${projectId}/artifacts`, {
-        method: 'POST',
-        body: JSON.stringify(data),
-      }),
+    list: (projectId: string): Promise<StepArtifact[]> => store.artifacts.list(projectId),
+    byStep: (projectId: string, step: number): Promise<StepArtifact[]> =>
+      store.artifacts.byStep(projectId, step),
+    save: (projectId: string, data: { step: number; type: string; content: string }): Promise<StepArtifact> =>
+      store.artifacts.upsert(projectId, data.step, data.type, data.content),
   },
 
   notes: {
-    list: (projectId: string) => req<StickyNote[]>(`/projects/${projectId}/notes`),
-    create: (projectId: string, data: { content: string; color?: string; x?: number; y?: number }) =>
-      req<StickyNote>(`/projects/${projectId}/notes`, {
-        method: 'POST',
-        body: JSON.stringify(data),
-      }),
-    update: (projectId: string, noteId: string, data: Partial<StickyNote>) =>
-      req<StickyNote>(`/projects/${projectId}/notes/${noteId}`, {
-        method: 'PATCH',
-        body: JSON.stringify(data),
-      }),
-    delete: (projectId: string, noteId: string) =>
-      req<{ ok: boolean }>(`/projects/${projectId}/notes/${noteId}`, { method: 'DELETE' }),
-    suggest: (projectId: string, idea?: string) =>
-      req<StickyNote[]>('/ai/suggest-notes', {
-        method: 'POST',
-        body: JSON.stringify({ project_id: projectId, idea }),
-      }),
+    list: (projectId: string): Promise<StickyNote[]> => store.notes.list(projectId),
+    create: (projectId: string, data: { content: string; color?: string; x?: number; y?: number }): Promise<StickyNote> =>
+      store.notes.create(projectId, data),
+    update: (projectId: string, noteId: string, data: Partial<StickyNote>): Promise<StickyNote> =>
+      store.notes.update(projectId, noteId, data),
+    delete: (projectId: string, noteId: string): Promise<{ ok: boolean }> =>
+      store.notes.remove(projectId, noteId).then(() => ({ ok: true })),
+    suggest: async (projectId: string, idea?: string): Promise<StickyNote[]> => {
+      const { system, user } = buildSuggestPrompt(idea ?? '서비스 아이디어')
+      let notes = [
+        { content: `문제정의 : ${idea ?? '서비스 아이디어'} 관련 불편함 해소`, color: '#fef08a' },
+        { content: '핵심기능 : 사용자 친화적 원클릭 인터랙션', color: '#bbf7d0' },
+        { content: '해결방안 : AI 연동 자동화 프로세스', color: '#bfdbfe' },
+      ]
+      try {
+        const text = await workerComplete(system, user, 1024)
+        const match = text.match(/```json\r?\n([\s\S]*?)```/) || text.match(/\[[\s\S]*\]/)
+        if (match) {
+          const p = JSON.parse(match[1] || match[0])
+          if (Array.isArray(p)) notes = p
+        }
+      } catch {
+        return []
+      }
+      const created: StickyNote[] = []
+      let offset = 40
+      for (const n of notes) {
+        created.push(
+          await store.notes.create(projectId, {
+            content: n.content,
+            color: n.color || '#fef08a',
+            x: 80 + offset,
+            y: 80 + offset,
+          })
+        )
+        offset += 60
+      }
+      return created
+    },
   },
 
   vibeRequests: {
-    list: (projectId: string) => req<VibeRequest[]>(`/projects/${projectId}/requests`),
-    create: (projectId: string, data: { prompt: string; status?: string }) =>
-      req<VibeRequest>(`/projects/${projectId}/requests`, {
-        method: 'POST',
-        body: JSON.stringify(data),
-      }),
+    list: (projectId: string): Promise<VibeRequest[]> => store.vibeRequests.list(projectId),
+    create: (projectId: string, data: { prompt: string; status?: string }): Promise<VibeRequest> =>
+      store.vibeRequests.add(projectId, data),
   },
 
   inspections: {
-    get: (projectId: string, step: number) => req<StepInspection | null>(`/projects/${projectId}/inspections/${step}`),
-    inspect: (data: { project_id: string; step: number; content?: string; notes?: string[] }) =>
-      req<StepInspection>('/ai/inspect', {
-        method: 'POST',
-        body: JSON.stringify(data),
-      }),
+    get: (projectId: string, step: number): Promise<StepInspection | null> =>
+      store.inspections.get(projectId, step),
+    inspect: async (data: {
+      project_id: string
+      step: number
+      content?: string
+      notes?: string[]
+    }): Promise<StepInspection> => {
+      const { project_id, step, content = '', notes = [] } = data
+      if (!Number.isInteger(step) || step < 0 || step > 3)
+        throw new Error('잘못된 단계입니다')
+      const { system, user } = buildInspectPrompt(step, content, notes)
+      let parsed: { score: number; status: string; feedback: string[] } = {
+        score: 72,
+        status: 'needs_improvement',
+        feedback: [
+          '핵심 문제와 해결 아이디어가 잘 제시되었습니다.',
+          '실제 사용자의 행동 시나리오를 조금 더 구체화해보세요.',
+          '시연할 최소 기능 범위를 명확히 좁히면 개발이 훨씬 쉬워집니다.',
+        ],
+      }
+      try {
+        const text = await workerComplete(system, user, 1024)
+        const match = text.match(/```json\r?\n([\s\S]*?)```/) || text.match(/\{[\s\S]*\}/)
+        if (match) {
+          const p = JSON.parse(match[1] || match[0])
+          if (p.score && Array.isArray(p.feedback)) parsed = p
+        }
+      } catch {
+        parsed = {
+          score: 70,
+          status: 'needs_improvement',
+          feedback: [
+            '문제 정의가 잘 드러나 있습니다.',
+            '예외 처리와 사용자 피드백 문구를 보완해보세요.',
+            '핵심 기능의 우선순위를 명확히 정하면 좋습니다.',
+          ],
+        }
+      }
+      const saved = await store.inspections.upsert(project_id, step, parsed.score, parsed.status, parsed.feedback)
+      return { ...saved, feedback: parsed.feedback }
+    },
   },
 
   chat: {
-    history: (projectId: string, step: number) =>
-      req<ChatMessage[]>(`/projects/${projectId}/chat/${step}`),
-    save: (projectId: string, data: { step: number; role: string; content: string }) =>
-      req<ChatMessage>(`/projects/${projectId}/chat`, {
-        method: 'POST',
-        body: JSON.stringify(data),
+    history: (projectId: string, step: number): Promise<ChatMessage[]> =>
+      store.chat.history(projectId, step),
+    save: (projectId: string, data: { step: number; role: 'user' | 'assistant'; content: string }): Promise<ChatMessage> =>
+      store.chat.add(projectId, {
+        step: data.step,
+        role: data.role as 'user' | 'assistant',
+        content: data.content,
       }),
   },
 
   kanban: {
-    list: (projectId: string) => req<KanbanCard[]>(`/projects/${projectId}/kanban`),
-    create: (projectId: string, data: Partial<KanbanCard>) =>
-      req<KanbanCard>(`/projects/${projectId}/kanban`, {
-        method: 'POST',
-        body: JSON.stringify(data),
-      }),
-    update: (projectId: string, cardId: string, data: Partial<KanbanCard>) =>
-      req<KanbanCard>(`/projects/${projectId}/kanban/${cardId}`, {
-        method: 'PATCH',
-        body: JSON.stringify(data),
-      }),
-    delete: (projectId: string, cardId: string) =>
-      req<{ ok: boolean }>(`/projects/${projectId}/kanban/${cardId}`, { method: 'DELETE' }),
+    list: (projectId: string): Promise<KanbanCard[]> => store.kanban.list(projectId),
+    create: (projectId: string, data: Partial<KanbanCard>): Promise<KanbanCard> =>
+      store.kanban.create(projectId, data),
+    update: (projectId: string, cardId: string, data: Partial<KanbanCard>): Promise<KanbanCard> =>
+      store.kanban.update(projectId, cardId, data),
+    delete: (projectId: string, cardId: string): Promise<{ ok: boolean }> =>
+      store.kanban.remove(projectId, cardId).then(() => ({ ok: true })),
   },
 
   ai: {
-    init: (data: { project_id: string; step: number; project_name: string; context?: Record<string, string> }) =>
-      req<{ message: string }>('/ai/init', { method: 'POST', body: JSON.stringify(data) }),
+    init: async (data: {
+      project_id: string
+      step: number
+      project_name: string
+      context?: Record<string, string>
+    }): Promise<{ message: string }> => ({
+      message: buildInitMessage(data.step, data.project_name, data.context ?? {}),
+    }),
 
     chat: async (
       data: {
@@ -123,38 +174,55 @@ export const api = {
       },
       onChunk: (text: string) => void,
       onDone: () => void
-    ) => {
-      const token = await firebaseAuth?.currentUser?.getIdToken()
-      const res = await fetch(`${BASE}/ai/chat`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ): Promise<void> => {
+      const { project_id, step, message, history = [], context = {} } = data
+      if (!Number.isInteger(step) || step < 0 || step > 3 || !message.trim() || message.length > 20000)
+        throw new Error('잘못된 채팅 요청입니다')
+      if (!Array.isArray(history) || history.length > 20)
+        throw new Error('잘못된 대화 기록입니다')
+
+      // 사용자 메시지 저장 (기존 백엔드와 동일)
+      await store.chat.add(project_id, { step, role: 'user', content: message })
+
+      // 3단계(개발)에서는 vibe 요청 기록도 저장
+      if (step === 3) {
+        await store.vibeRequests.add(project_id, { prompt: message, status: 'completed' })
+      }
+
+      const system = buildSystemPrompt(step, context)
+      const messages = [...history.map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content })), { role: 'user' as const, content: message }]
+
+      let full = ''
+      await workerChat(
+        system,
+        messages,
+        (chunk) => {
+          full += chunk
+          onChunk(chunk)
         },
-        body: JSON.stringify(data),
-      })
-      if (!res.ok) {
-        const errorJson = await res.json().catch(() => null)
-        throw new Error(errorJson?.error || `AI 오류 (${res.status})`)
-      }
-      const reader = res.body!.getReader()
-      const dec = new TextDecoder()
-      let buf = ''
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buf += dec.decode(value, { stream: true })
-        const lines = buf.split('\n')
-        buf = lines.pop() ?? ''
-        for (const line of lines) {
-          if (!line.startsWith('data:')) continue
-          const payload = line.slice(5).trim()
-          if (!payload) continue
-          const parsed = JSON.parse(payload)
-          if (parsed.text) onChunk(parsed.text)
-          if (parsed.done) onDone()
+        async () => {
+          // 어시스턴트 메시지 저장
+          await store.chat.add(project_id, { step, role: 'assistant', content: full })
+
+          // 산출물 자동 추출·저장
+          const { artifacts, notes } = extractArtifacts(full, step)
+          for (const a of artifacts) {
+            await store.artifacts.upsert(project_id, step, a.type, a.content)
+          }
+          // 0단계 JSON의 notes 배열 → 스티커 메모 자동 생성
+          let offset = 40
+          for (const n of notes) {
+            await store.notes.create(project_id, {
+              content: n.content,
+              color: n.color,
+              x: 60 + offset,
+              y: 60 + offset,
+            })
+            offset += 50
+          }
+          onDone()
         }
-      }
+      )
     },
   },
 }

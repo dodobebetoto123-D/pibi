@@ -1,0 +1,10 @@
+name = "pibi-ai"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+
+[vars]
+GROQ_MODEL = "openai/gpt-oss-120b"
+FIREBASE_PROJECT_ID = "pibi-5fb39"
+# ALLOWED_ORIGIN = "https://pibi-5fb39.web.app"  # 필요하면 주석 해제
+
+# GROQ_API_KEY는 시크릿으로 등록: wrangler secret put GROQ_API_KEY
