@@ -1,0 +1,30 @@
+# Fly.io 배포용 설정
+app = "pibi-backend"
+primary_region = "nrt"
+
+[build]
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = "suspend"
+  auto_start_machines = true
+  min_machines_running = 0
+  [http_service.concurrency]
+    type = "connections"
+    hard_limit = 25
+    soft_limit = 20
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
+
+# SQLite 영속화용 볼륨 (fly volumes create pibi_data --size 1 로 생성)
+[[mounts]]
+  source = "pibi_data"
+  destination = "/app/data"
+
+[env]
+  DB_PATH = "/app/data/data.db"
+  HOSTNAME = "0.0.0.0"
+  PORT = "3000"

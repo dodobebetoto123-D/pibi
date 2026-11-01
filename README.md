@@ -77,6 +77,15 @@ Firebase Console > Authentication > 승인된 도메인에 배포 도메인(`pib
 
 > SQLite 파일 DB라서 Vercel/Cloud Functions 같은 서버리스에는 못 올립니다. 컨테이너 호스팅(Railway/Render/Fly.io) 또는 라즈베리파이 + Cloudflare Tunnel 조합을 쓰세요.
 
+### 백엔드 (Fly.io)
+```bash
+cd backend
+fly launch --no-deploy        # fly.toml이 이미 있음
+fly volumes create pibi_data --size 1 --region nrt
+fly secrets set GROQ_API_KEY=... FIREBASE_PROJECT_ID=... CORS_ORIGINS=https://<프론트도메인>
+fly deploy
+```
+
 ## 기술 스택
 
 - **Frontend**: React 19 + Vite + TypeScript + Tailwind CSS + @dnd-kit
