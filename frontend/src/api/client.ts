@@ -1,7 +1,8 @@
 import type { Project, StepArtifact, ChatMessage, KanbanCard, StickyNote, VibeRequest, StepInspection } from '../types'
 import { firebaseAuth } from '../auth/firebase'
 
-const BASE = '/api'
+// 배포 시 frontend/.env.local에 VITE_API_URL=https://백엔드주소 로 지정
+const BASE = import.meta.env.VITE_API_URL ?? '/api'
 
 async function req<T>(url: string, opts?: RequestInit): Promise<T> {
   const token = await firebaseAuth?.currentUser?.getIdToken()

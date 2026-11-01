@@ -5,7 +5,8 @@ import path from 'path'
 import { fileURLToPath } from 'url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const DB_PATH = path.join(__dirname, '..', 'data.db')
+// DB_PATH 환경변수로 변경 가능 (호스팅 시 볼륨 마운트 경로 지정용)
+const DB_PATH = process.env.DB_PATH ?? path.join(__dirname, '..', 'data.db')
 
 export const db = new DatabaseSync(DB_PATH)
 

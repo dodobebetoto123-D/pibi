@@ -57,14 +57,25 @@ npm run dev
 
 ## 배포
 
-- **프론트엔드**: `firebase deploy` (Firebase Hosting, `firebase.json`에 설정됨)
-- **백엔드**: Railway/Render 같은 Node 호스팅에 올리세요.
-  1. `backend/.env`에 `GROQ_API_KEY`, `FIREBASE_PROJECT_ID`, `GOOGLE_APPLICATION_CREDENTIALS`(서비스 계정 JSON 경로)를 설정
-  2. 시작 명령: `npm install && npx tsc && node dist/index.js` (tsconfig outDir 설정 후)
-  3. 프론트엔드 `.env`의 API 주소(`src/api/client.ts`의 `BASE`)를 백엔드 공개 URL로 변경
-  4. 백엔드 `src/index.ts`의 CORS origin에 배포된 프론트엔드 도메인 추가
+### 프론트엔드 (Firebase Hosting)
+```bash
+cd frontend
+# .env.local에 VITE_API_URL=https://<백엔드주소> 지정 후
+npm run build
+firebase deploy --only hosting
+```
+Firebase Console > Authentication > 승인된 도메인에 배포 도메인(`pibi-5fb39.web.app` 등) 추가 필요.
 
-> 지금 백엔드는 `127.0.0.1`에만 바인딩되어 있어 로컬 전용입니다. 배포 시 `hostname` 설정을 확인하세요.
+### 백엔드 (Railway — 추천)
+1. [railway.app](https://railway.app) 가입 → New Project → GitHub의 pibi 저장소 선택
+2. 서비스 설정:
+   - Root Directory: `backend`
+   - Dockerfile이 자동 감지됨 (`backend/Dockerfile`)
+   - Variables에 추가: `GROQ_API_KEY`, `FIREBASE_PROJECT_ID`, `GOOGLE_APPLICATION_CREDENTIALS` 내용 또는 서비스 계정 JSON, `CORS_ORIGINS=https://<프론트도메인>`
+   - Volume 추가 → 마운트 경로 `/app/data` (data.db 영속화)
+3. 배포 후 생성된 공개 URL을 프론트엔드 `VITE_API_URL`에 입력
+
+> SQLite 파일 DB라서 Vercel/Cloud Functions 같은 서버리스에는 못 올립니다. 컨테이너 호스팅(Railway/Render/Fly.io) 또는 라즈베리파이 + Cloudflare Tunnel 조합을 쓰세요.
 
 ## 기술 스택
 
