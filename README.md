@@ -80,11 +80,15 @@ Firebase Console > Authentication > 승인된 도메인에 배포 도메인(`pib
 ### 백엔드 (Fly.io)
 ```bash
 cd backend
-fly launch --no-deploy        # fly.toml이 이미 있음
-fly volumes create pibi_data --size 1 --region nrt
+fly launch --no-deploy        # fly.toml이 이미 있음 (앱 이름 pibi-backend)
+fly volumes create pibi_data --size 1 --region nrt   # SQLite 영속화
 fly secrets set GROQ_API_KEY=... FIREBASE_PROJECT_ID=... CORS_ORIGINS=https://<프론트도메인>
+# 서비스 계정 JSON을 시크릿으로 등록 (따옴표 유지 주의)
+fly secrets set FIREBASE_SERVICE_ACCOUNT_JSON="$(cat 서비스계정.json)"
 fly deploy
+fly info   # 공개 URL 확인
 ```
+> Fly.io 무료 티어는 카드 등록이 필요할 수 있습니다. 머신은 요청 없을 때 자동 정지되고 요청 오면 깨어납니다.
 
 ## 기술 스택
 
