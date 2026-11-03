@@ -25,7 +25,7 @@ export async function workerChat(
   system: string,
   messages: WorkerMessage[],
   onChunk: (text: string) => void,
-  onDone: () => void
+  onDone: () => void | Promise<void>
 ): Promise<void> {
   const token = await getToken()
   const res = await fetch(`${workerUrl()}/chat`, {
@@ -55,7 +55,7 @@ export async function workerChat(
       if (!payload) continue
       const parsed = JSON.parse(payload)
       if (parsed.text) onChunk(parsed.text)
-      if (parsed.done) onDone()
+      if (parsed.done) await onDone()
     }
   }
 }

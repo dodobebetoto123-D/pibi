@@ -17,29 +17,100 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/projects/$(projectId)).data.owner_uid == request.auth.uid;
     }
 
+    function isProjectMember(projectId) {
+      return signedIn() && (isProjectOwner(projectId)
+        || exists(/databases/$(database)/documents/projects/$(projectId)/members/$(request.auth.uid)));
+    }
+
     match /projects/{projectId} {
-      allow read: if signedIn() && resource.data.owner_uid == request.auth.uid;
+      // Keep owner queries provable to Firestore's rules engine (`owner_uid == uid`)
+      // while still allowing invited members to read a project by its document path.
+      allow read: if signedIn() && (
+        resource.data.owner_uid == request.auth.uid
+        || exists(/databases/$(database)/documents/projects/$(projectId)/members/$(request.auth.uid))
+      );
       allow create: if signedIn() && request.resource.data.owner_uid == request.auth.uid;
-      allow update, delete: if signedIn() && resource.data.owner_uid == request.auth.uid;
+      allow update: if isProjectOwner(projectId)
+        && request.resource.data.owner_uid == resource.data.owner_uid;
+      allow delete: if isProjectOwner(projectId);
+
+      match /members/{memberUid} {
+        allow read: if isProjectMember(projectId);
+        allow create: if signedIn()
+          && request.auth.uid == memberUid
+          && request.resource.data.uid == memberUid
+          && request.resource.data.invitation_id is string
+          && request.resource.data.role == 'editor'
+          && get(/databases/$(database)/documents/invitations/$(request.resource.data.invitation_id)).data.project_id == projectId
+          && get(/databases/$(database)/documents/invitations/$(request.resource.data.invitation_id)).data.email == request.auth.token.email
+          && get(/databases/$(database)/documents/invitations/$(request.resource.data.invitation_id)).data.status == 'pending'
+          && request.time < get(/databases/$(database)/documents/invitations/$(request.resource.data.invitation_id)).data.expires_at;
+        allow update, delete: if isProjectOwner(projectId);
+      }
 
       match /artifacts/{docId} {
-        allow read, write: if isProjectOwner(projectId);
+        allow read, write: if isProjectMember(projectId);
       }
       match /chat/{docId} {
-        allow read, write: if isProjectOwner(projectId);
+        allow read: if isProjectMember(projectId);
+        allow create: if isProjectMember(projectId)
+          && (request.resource.data.step != -1 || (request.resource.data.sender_uid == request.auth.uid
+            && request.resource.data.content is string && request.resource.data.content.size() <= 4000));
+        allow update: if isProjectMember(projectId) && resource.data.step != -1 && request.resource.data.step != -1;
+        allow delete: if isProjectOwner(projectId) || (isProjectMember(projectId) && resource.data.step != -1);
       }
       match /kanban/{docId} {
-        allow read, write: if isProjectOwner(projectId);
+        allow read, write: if isProjectMember(projectId);
       }
       match /notes/{docId} {
-        allow read, write: if isProjectOwner(projectId);
+        allow read, write: if isProjectMember(projectId);
       }
       match /requests/{docId} {
-        allow read, write: if isProjectOwner(projectId);
+        allow read, write: if isProjectMember(projectId);
       }
       match /inspections/{docId} {
-        allow read, write: if isProjectOwner(projectId);
+        allow read, write: if isProjectMember(projectId);
       }
+    }
+
+    match /users/{userId} {
+      allow read, create, update: if signedIn() && request.auth.uid == userId;
+      allow delete: if false;
+
+      match /projects/{projectId} {
+        allow read: if signedIn() && request.auth.uid == userId;
+        allow create: if signedIn() && request.auth.uid == userId
+          && existsAfter(/databases/$(database)/documents/projects/$(projectId)/members/$(userId));
+        allow update, delete: if signedIn() && request.auth.uid == userId;
+      }
+    }
+
+    match /invitations/{invitationId} {
+      allow create: if signedIn()
+        && isProjectOwner(request.resource.data.project_id)
+        && request.resource.data.inviter_uid == request.auth.uid
+        && request.resource.data.status == 'pending'
+        && request.resource.data.email is string
+        && request.resource.data.expires_at is timestamp
+        && request.resource.data.expires_at > request.time
+        && request.resource.data.expires_at < request.time + duration.value(8, 'd');
+      allow read: if signedIn() && (
+        resource.data.email == request.auth.token.email
+        || resource.data.inviter_uid == request.auth.uid
+        || isProjectOwner(resource.data.project_id)
+      );
+      allow update: if signedIn() && (
+        (isProjectOwner(resource.data.project_id)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+          && request.resource.data.status == 'revoked')
+        || (resource.data.email == request.auth.token.email
+          && resource.data.status == 'pending'
+          && request.time < resource.data.expires_at
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read_at', 'status', 'accepted_at', 'accepted_by'])
+          && (request.resource.data.status == 'pending'
+            || (request.resource.data.status == 'accepted' && request.resource.data.accepted_by == request.auth.uid)))
+      );
+      allow delete: if signedIn() && isProjectOwner(resource.data.project_id);
     }
   }
 }

@@ -13,6 +13,7 @@ import {
   writeBatch,
 } from 'firebase/firestore'
 import { firestore } from '../auth/firebase'
+import { productStore } from './productStore'
 import type {
   Project,
   StepArtifact,
@@ -46,8 +47,14 @@ async function deleteSubcollection(projectId: string, name: string) {
 export const store = {
   projects: {
     async list(uid: string): Promise<Project[]> {
-      const snap = await getDocs(query(collection(db(), 'projects'), where('owner_uid', '==', uid)))
-      const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Project)
+      const [ownedSnap, memberRows] = await Promise.all([
+        getDocs(query(collection(db(), 'projects'), where('owner_uid', '==', uid))),
+        productStore.listProjectsForUser(uid),
+      ])
+      const byId = new Map<string, Project>()
+      ownedSnap.docs.forEach((d) => byId.set(d.id, { id: d.id, ...d.data() } as Project))
+      memberRows.forEach((row) => byId.set(row.id, row as unknown as Project))
+      const rows = [...byId.values()]
       rows.sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''))
       return rows
     },
@@ -90,11 +97,15 @@ export const store = {
   artifacts: {
     async list(projectId: string): Promise<StepArtifact[]> {
       const snap = await getDocs(sub(projectId, 'artifacts'))
-      return snap.docs.map((d) => ({ id: d.id, project_id: projectId, ...d.data() }) as StepArtifact)
+      return snap.docs.filter((d) => d.data().history !== true).map((d) => ({ id: d.id, project_id: projectId, ...d.data() }) as StepArtifact)
     },
     async byStep(projectId: string, step: number): Promise<StepArtifact[]> {
       const snap = await getDocs(query(sub(projectId, 'artifacts'), where('step', '==', step)))
-      return snap.docs.map((d) => ({ id: d.id, project_id: projectId, ...d.data() }) as StepArtifact)
+      return snap.docs.filter((d) => d.data().history !== true).map((d) => ({ id: d.id, project_id: projectId, ...d.data() }) as StepArtifact)
+    },
+    async versions(projectId: string, step: number): Promise<StepArtifact[]> {
+      const snap = await getDocs(query(sub(projectId, 'artifacts'), where('step', '==', step)))
+      return snap.docs.filter((d) => d.data().history === true).map((d) => ({ id: d.id, project_id: projectId, ...d.data() }) as StepArtifact).sort((a, b) => b.updated_at.localeCompare(a.updated_at))
     },
     async upsert(projectId: string, step: number, type: string, content: string): Promise<StepArtifact> {
       const id = `${step}_${type}`
@@ -108,7 +119,10 @@ export const store = {
         created_at: existing.exists() ? (existing.data().created_at as string) : now(),
         updated_at: now(),
       }
-      await setDoc(ref, row, { merge: true })
+      const batch = writeBatch(db())
+      batch.set(ref, row, { merge: true })
+      batch.set(doc(db(), 'projects', projectId, 'artifacts', `version_${newId()}`), { ...row, history: true })
+      await batch.commit()
       return { id, ...row } as StepArtifact
     },
   },

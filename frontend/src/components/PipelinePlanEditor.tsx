@@ -2,52 +2,26 @@ import { useState, useEffect } from 'react'
 import {
   Bold, Italic, Underline, Strikethrough, Code, Link,
   Heading1, Heading2, Heading3, List, ListOrdered, Quote,
-  Save, Eye, Edit3
+  Save, Eye, Edit3, Download
 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 
 interface PipelinePlanEditorProps {
   content: string
-  onSave: (content: string) => void
+  notes: string[]
+  onSave: (content: string) => Promise<unknown>
 }
 
-const DEFAULT_PLAN_TEMPLATE = `# 1. 시연 범위 분리
-
-## [당일 시연 - 최소 기능 (MVP)]
-- 입구 QR 스캔 (PC/노트북 1대 + 웹캠 + 스캔 인식)
-- 배식대 QR 스캔: 인식 즉시 학번 검증 및 대기열 등록
-- 서버: 스캔 기록(SQLite), 대기 큐 관리, 예상 대기시간 계산
-- 입구 화면: 현재 대기자 수 / 예상 대기시간 큰 글씨 실시간 표시
-- 예외 처리: QR 미인식 안내 -> 2회 실패 시 학번 직접 입력
-
-## [추후 - 확장 기능]
-- 학년별·반별 급식 시간대 자동 분산 스케줄링
-- 모바일 학부모 알림 연동
-
----
-
-# 2. 서비스 데이터 흐름
-1. 학생이 입구 카메라에 QR 코드 제시
-2. 시스템이 학번 검증 후 대기 순번 및 예상 대기시간 부여
-3. 안내 화면에 "N번째 순서입니다. 예상 대기시간 약 X분" 표시
-4. 배식 완료 시 대기 큐에서 자동 제거
-
----
-
-# 3. 안전 및 예외 처리
-- 개인정보 보호: 학번과 시각만 최소 수집하며 당일 급식 종료 후 자동 파기
-- 미등록 학생: 담당 교사 확인 및 현장 학번 직접 입력 지원`
-
-export default function PipelinePlanEditor({ content, onSave }: PipelinePlanEditorProps) {
-  const [text, setText] = useState(content || DEFAULT_PLAN_TEMPLATE)
+export default function PipelinePlanEditor({ content, notes, onSave }: PipelinePlanEditorProps) {
+  const [text, setText] = useState(content)
   const [viewMode, setViewMode] = useState<'split' | 'edit' | 'preview'>('edit')
   const [isSaved, setIsSaved] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
 
   useEffect(() => {
-    if (content) {
-      setText(content)
-      setIsSaved(true)
-    }
+    setText(content)
+    setIsSaved(true)
   }, [content])
 
   const insertText = (prefix: string, suffix: string = '') => {
@@ -55,15 +29,23 @@ export default function PipelinePlanEditor({ content, onSave }: PipelinePlanEdit
     setIsSaved(false)
   }
 
-  const handleSave = () => {
-    onSave(text)
-    setIsSaved(true)
+  const handleSave = async () => {
+    setSaving(true)
+    setError('')
+    try {
+      await onSave(text)
+      setIsSaved(true)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '저장하지 못했습니다. 다시 시도해주세요.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
     <div className="flex flex-col h-full bg-white overflow-hidden">
       {/* Rich Toolbar */}
-      <div className="px-4 py-2 border-b border-gray-200 bg-gray-50/80 flex flex-wrap items-center justify-between gap-2 flex-shrink-0">
+      <fieldset disabled={saving} className="px-4 py-2 border-b border-gray-200 bg-gray-50/80 flex flex-wrap items-center justify-between gap-2 flex-shrink-0">
         <div className="flex items-center gap-1">
           <button
             onClick={() => insertText('**', '**')}
@@ -159,6 +141,18 @@ export default function PipelinePlanEditor({ content, onSave }: PipelinePlanEdit
 
         {/* View mode toggle & Save */}
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            disabled={saving || notes.length === 0}
+            onClick={() => {
+              setText((previous) => `${previous}${previous.trim() ? '\n\n' : ''}## 브레인스토밍 메모\n${notes.map((note) => `- ${note.replace(/\n/g, '\n  ')}`).join('\n')}`)
+              setIsSaved(false)
+            }}
+            className="flex items-center gap-1 rounded-lg border border-gray-200 px-2 py-1 text-xs text-gray-700 disabled:opacity-50"
+            title="브레인스토밍 메모를 기획서 끝에 추가"
+          >
+            <Download size={12} /> 메모 가져오기
+          </button>
           <div className="flex bg-gray-200/60 p-0.5 rounded-lg text-xs">
             <button
               onClick={() => setViewMode('edit')}
@@ -187,7 +181,8 @@ export default function PipelinePlanEditor({ content, onSave }: PipelinePlanEdit
           </div>
 
           <button
-            onClick={handleSave}
+            onClick={() => void handleSave()}
+            disabled={saving}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all shadow-xs ${
               isSaved
                 ? 'bg-gray-100 text-gray-600 hover:bg-gray-200'
@@ -195,16 +190,18 @@ export default function PipelinePlanEditor({ content, onSave }: PipelinePlanEdit
             }`}
           >
             <Save size={13} />
-            <span>{isSaved ? '저장됨' : '저장하기'}</span>
+            <span>{saving ? '저장 중...' : isSaved ? '저장됨' : '저장하기'}</span>
           </button>
         </div>
-      </div>
+      </fieldset>
+      {error && <p role="alert" className="border-b border-red-200 bg-red-50 px-4 py-2 text-xs text-red-700">{error}</p>}
 
       {/* Editor / Preview Area */}
       <div className="flex-1 flex overflow-hidden">
         {(viewMode === 'edit' || viewMode === 'split') && (
           <div className={`h-full flex flex-col ${viewMode === 'split' ? 'w-1/2 border-r border-gray-200' : 'w-full'}`}>
             <textarea
+              disabled={saving}
               value={text}
               onChange={(e) => {
                 setText(e.target.value)

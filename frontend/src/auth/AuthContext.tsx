@@ -10,6 +10,8 @@ import {
   type User,
 } from 'firebase/auth'
 import { firebaseAuth } from './firebase'
+import { productStore } from '../lib/productStore'
+import { useLocale } from '../contexts/LocaleContext'
 
 type AuthContextValue = {
   user: User | null
@@ -24,6 +26,7 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue | null>(null)
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const { setLocale } = useLocale()
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -34,7 +37,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     return onAuthStateChanged(firebaseAuth, (nextUser) => {
       setUser(nextUser)
-      setLoading(false)
+      if (!nextUser) {
+        setLoading(false)
+        return
+      }
+      void productStore.ensureProfile(nextUser)
+        .then((profile) => setLocale(profile.locale))
+        .catch((error) => console.error('Profile initialization failed:', error))
+        .finally(() => setLoading(false))
     })
   }, [])
 

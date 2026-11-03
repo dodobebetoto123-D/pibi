@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { Leaf, LoaderCircle, LockKeyhole, Mail } from 'lucide-react'
 import { firebaseConfigured } from '../auth/firebase'
 import { useAuth } from '../auth/AuthContext'
+import { useLocale } from '../contexts/LocaleContext'
 
 type Mode = 'login' | 'signup' | 'reset'
 
@@ -25,6 +26,7 @@ function readableAuthError(error: unknown) {
 
 export default function Login() {
   const { signIn, signInWithGoogle, signUp, resetPassword } = useAuth()
+  const { locale, setLocale } = useLocale()
   const navigate = useNavigate()
   const location = useLocation()
   const [mode, setMode] = useState<Mode>('login')
@@ -74,10 +76,13 @@ export default function Login() {
     }
   }
 
-  const title = mode === 'signup' ? '계정 만들기' : mode === 'reset' ? '비밀번호 재설정' : '다시 오셨네요'
+  const title = locale === 'ko'
+    ? mode === 'signup' ? '계정 만들기' : mode === 'reset' ? '비밀번호 재설정' : '다시 오셨네요'
+    : mode === 'signup' ? 'Create your account' : mode === 'reset' ? 'Reset your password' : 'Welcome back'
 
   return (
-    <main className="min-h-screen bg-white flex items-center justify-center px-5 py-10">
+    <main className="min-h-screen bg-white flex items-center justify-center px-5 py-10 relative">
+      <button onClick={() => setLocale(locale === 'ko' ? 'en' : 'ko')} className="absolute right-5 top-5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50">{locale === 'ko' ? 'English' : '한국어'}</button>
       <section className="w-full max-w-md bg-white rounded-[16px] border border-gray-200 p-8 sm:p-10">
         <div className="flex justify-center mb-6">
           <div className="w-12 h-12 rounded-[16px] bg-blue-50 text-blue-600 flex items-center justify-center">
@@ -88,8 +93,9 @@ export default function Login() {
           <p className="font-extrabold text-gray-900 tracking-tight">pibi</p>
           <h1 className="text-2xl font-extrabold text-gray-900 mt-4">{title}</h1>
           <p className="text-sm text-gray-500 mt-2">
-            {mode === 'signup' ? '이메일로 가입하고 아이디어를 프로젝트로 만들어보세요.' :
-              mode === 'reset' ? '가입한 이메일 주소를 입력해주세요.' : '로그인해 프로젝트 작업을 이어가세요.'}
+            {locale === 'ko'
+              ? mode === 'signup' ? '이메일로 가입하고 아이디어를 프로젝트로 만들어보세요.' : mode === 'reset' ? '가입한 이메일 주소를 입력해주세요.' : '로그인해 프로젝트 작업을 이어가세요.'
+              : mode === 'signup' ? 'Sign up with email and turn an idea into a project.' : mode === 'reset' ? 'Enter the email address on your account.' : 'Sign in to continue your projects.'}
           </p>
         </div>
 
@@ -100,28 +106,28 @@ export default function Login() {
         ) : (
           <form onSubmit={submit} className="space-y-4">
             <label className="block">
-              <span className="text-xs font-bold text-gray-700">이메일</span>
+              <span className="text-xs font-bold text-gray-700">{locale === 'ko' ? '이메일' : 'Email'}</span>
               <span className="mt-1.5 min-h-12 flex items-center gap-2 rounded-[12px] border border-gray-300 px-3.5 focus-within:border-blue-600 focus-within:ring-2 focus-within:ring-blue-200">
                 <Mail size={16} className="text-gray-400" />
                 <input required type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@example.com" className="w-full py-3 text-sm outline-none" />
               </span>
             </label>
             {mode !== 'reset' && <label className="block">
-              <span className="text-xs font-bold text-gray-700">비밀번호</span>
+              <span className="text-xs font-bold text-gray-700">{locale === 'ko' ? '비밀번호' : 'Password'}</span>
               <span className="mt-1.5 min-h-12 flex items-center gap-2 rounded-[12px] border border-gray-300 px-3.5 focus-within:border-blue-600 focus-within:ring-2 focus-within:ring-blue-200">
                 <LockKeyhole size={16} className="text-gray-400" />
                 <input required minLength={6} type="password" autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="6자 이상" className="w-full py-3 text-sm outline-none" />
               </span>
             </label>}
             {mode === 'signup' && <label className="block">
-              <span className="text-xs font-bold text-gray-700">비밀번호 확인</span>
+              <span className="text-xs font-bold text-gray-700">{locale === 'ko' ? '비밀번호 확인' : 'Confirm password'}</span>
               <input required minLength={6} type="password" autoComplete="new-password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="비밀번호를 한 번 더 입력하세요" className="mt-1.5 min-h-12 w-full rounded-[12px] border border-gray-300 px-3.5 py-3 text-sm outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-200" />
             </label>}
             {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
             {notice && <p role="status" className="text-sm text-emerald-700">{notice}</p>}
             <button disabled={busy} className="w-full min-h-12 rounded-[16px] bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm px-4 disabled:opacity-60 flex items-center justify-center gap-2 transition-colors">
               {busy && <LoaderCircle size={16} className="animate-spin" />}
-              {mode === 'signup' ? '회원가입' : mode === 'reset' ? '재설정 이메일 보내기' : '로그인'}
+              {locale === 'ko' ? mode === 'signup' ? '회원가입' : mode === 'reset' ? '재설정 이메일 보내기' : '로그인' : mode === 'signup' ? 'Create account' : mode === 'reset' ? 'Send reset email' : 'Sign in'}
             </button>
           </form>
         )}
@@ -129,7 +135,7 @@ export default function Login() {
         {firebaseConfigured && mode !== 'reset' && <>
           <div className="flex items-center gap-3 my-5 text-xs text-gray-400">
             <span className="h-px bg-gray-200 flex-1" />
-            또는
+            {locale === 'ko' ? '또는' : 'or'}
             <span className="h-px bg-gray-200 flex-1" />
           </div>
           <button type="button" disabled={busy} onClick={() => void continueWithGoogle()} className="w-full min-h-12 rounded-[16px] border border-gray-300 bg-white hover:bg-gray-50 text-gray-800 font-semibold text-sm px-4 flex items-center justify-center gap-3 disabled:opacity-60 transition-colors">
@@ -139,16 +145,16 @@ export default function Login() {
               <path fill="#FBBC05" d="M10.53 28.59A14.4 14.4 0 0 1 9.75 24c0-1.59.27-3.13.75-4.59l-7.98-6.19A23.9 23.9 0 0 0 0 24c0 3.87.93 7.52 2.56 10.78l7.97-6.19Z" />
               <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.91-5.8l-7.73-6c-2.14 1.44-4.88 2.3-8.18 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48Z" />
             </svg>
-            Google로 계속하기
+            {locale === 'ko' ? 'Google로 계속하기' : 'Continue with Google'}
           </button>
         </>}
 
         {firebaseConfigured && <div className="mt-6 text-center text-sm text-gray-500 space-y-3">
-          {mode === 'login' && <button onClick={() => { setError(''); setMode('reset') }} className="block w-full hover:text-gray-900">비밀번호를 잊으셨나요?</button>}
+          {mode === 'login' && <button onClick={() => { setError(''); setMode('reset') }} className="block w-full hover:text-gray-900">{locale === 'ko' ? '비밀번호를 잊으셨나요?' : 'Forgot password?'}</button>}
           <p>
-            {mode === 'signup' ? '이미 계정이 있나요?' : '처음 사용하시나요?'}{' '}
+            {locale === 'ko' ? mode === 'signup' ? '이미 계정이 있나요?' : '처음 사용하시나요?' : mode === 'signup' ? 'Already have an account?' : 'New to pibi?'}{' '}
             <button onClick={() => { setError(''); setMode(mode === 'signup' ? 'login' : 'signup') }} className="font-bold text-blue-600 hover:text-blue-700">
-              {mode === 'signup' ? '로그인' : '회원가입'}
+              {locale === 'ko' ? mode === 'signup' ? '로그인' : '회원가입' : mode === 'signup' ? 'Sign in' : 'Create account'}
             </button>
           </p>
         </div>}

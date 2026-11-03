@@ -33,6 +33,7 @@ export const api = {
   },
 
   artifacts: {
+    versions: (projectId: string, step: number): Promise<StepArtifact[]> => store.artifacts.versions(projectId, step),
     list: (projectId: string): Promise<StepArtifact[]> => store.artifacts.list(projectId),
     byStep: (projectId: string, step: number): Promise<StepArtifact[]> =>
       store.artifacts.byStep(projectId, step),

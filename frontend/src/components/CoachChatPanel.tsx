@@ -213,7 +213,7 @@ export default function CoachChatPanel({
           <div className="w-6 h-6 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center text-xs">
             🌱
           </div>
-          <span className="text-xs font-bold text-gray-800">그룹 채팅 (봄비)</span>
+          <span className="text-xs font-bold text-gray-800">AI 코치 (봄비)</span>
           <span className="w-2 h-2 rounded-full bg-blue-600" />
         </div>
       </div>

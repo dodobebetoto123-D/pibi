@@ -4,6 +4,7 @@ export type ProjectType = 'web' | 'mobile' | 'api' | 'data' | 'other'
 export interface Project {
   id: string
   name: string
+  owner_uid?: string
   type: ProjectType
   description: string
   status: ProjectStatus
