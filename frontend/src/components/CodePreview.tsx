@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import { Monitor, RefreshCw, Maximize2 } from 'lucide-react'
 
 interface CodePreviewProps {
@@ -6,18 +6,8 @@ interface CodePreviewProps {
 }
 
 export default function CodePreview({ html }: CodePreviewProps) {
-  const iframeRef = useRef<HTMLIFrameElement>(null)
   const [key, setKey] = useState(0)
   const [fullscreen, setFullscreen] = useState(false)
-
-  useEffect(() => {
-    if (!iframeRef.current || !html) return
-    const doc = iframeRef.current.contentDocument
-    if (!doc) return
-    doc.open()
-    doc.write(html)
-    doc.close()
-  }, [html, key])
 
   const refresh = () => setKey((k) => k + 1)
 
@@ -59,7 +49,7 @@ export default function CodePreview({ html }: CodePreviewProps) {
       </div>
       <iframe
         key={key}
-        ref={iframeRef}
+        srcDoc={html}
         sandbox="allow-scripts allow-forms"
         className="flex-1 w-full bg-white"
         title="App Preview"

@@ -39,6 +39,7 @@ export default function ChatPanel({
   const [loading, setLoading] = useState(false)
   const [streaming, setStreaming] = useState(false)
   const [streamText, setStreamText] = useState('')
+  const [chatError, setChatError] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
@@ -64,7 +65,6 @@ export default function ChatPanel({
         .then((res) => {
           const msg = { role: 'assistant' as const, content: res.message }
           setMessages([msg])
-          api.chat.save(projectId, { step, role: 'assistant', content: res.message })
         })
         .catch(console.error)
         .finally(() => setLoading(false))
@@ -76,6 +76,7 @@ export default function ChatPanel({
     const text = input.trim()
     if (!text || loading || streaming) return
     setInput('')
+    setChatError('')
     const userMsg = { role: 'user' as const, content: text }
     setMessages((prev) => [...prev, userMsg])
     setStreaming(true)
@@ -104,10 +105,7 @@ export default function ChatPanel({
       )
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : '⚠️ 오류가 발생했습니다. 다시 시도해주세요.'
-      setMessages((prev) => [
-        ...prev,
-        { role: 'assistant', content: `⚠️ ${errMsg}` },
-      ])
+      setChatError(errMsg)
       setStreaming(false)
       setStreamText('')
     }
@@ -194,6 +192,7 @@ export default function ChatPanel({
         <div ref={bottomRef} />
       </div>
 
+      {chatError && <p role="alert" className="px-4 py-2 text-xs text-red-700">{chatError}</p>}
       {/* Input */}
       <div className="p-4 border-t border-gray-100">
         <div className="flex gap-2 items-end bg-gray-50 rounded-2xl border border-gray-200 p-2 focus-within:ring-2 focus-within:ring-brand-400 focus-within:border-brand-300">

@@ -3,6 +3,7 @@
 // - Groq Chat Completions API를 호출해 결과를 그대로 전달
 // - 개인 데이터에는 접근하지 않음 (데이터 접근은 Firestore 보안 규칙이 담당)
 import { jwtVerify, createRemoteJWKSet } from 'jose'
+import { convertGroqStream } from './groqStream'
 
 interface Env {
   GROQ_API_KEY: string
@@ -112,41 +113,7 @@ async function handleChat(req: Request, env: Env): Promise<Response> {
     return json({ error: `Groq 오류 (${groqRes.status}) ${errText.slice(0, 200)}` }, 502, env)
   }
 
-  // Groq SSE → 프론트가 기대하는 {text}/{done} 포맷으로 변환
-  const encoder = new TextEncoder()
-  const stream = new ReadableStream({
-    async start(controller) {
-      const reader = groqRes.body!.getReader()
-      const dec = new TextDecoder()
-      let buf = ''
-      try {
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) break
-          buf += dec.decode(value, { stream: true })
-          const lines = buf.split('\n')
-          buf = lines.pop() ?? ''
-          for (const line of lines) {
-            const t = line.trim()
-            if (!t.startsWith('data:')) continue
-            const data = t.slice(5).trim()
-            if (!data || data === '[DONE]') continue
-            try {
-              const parsed = JSON.parse(data)
-              const text: string = parsed.choices?.[0]?.delta?.content ?? ''
-              if (text) controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text })}\n\n`))
-            } catch {
-              // 부분 JSON 청크는 무시
-            }
-          }
-        }
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true })}\n\n`))
-        controller.close()
-      } catch (err) {
-        controller.error(err)
-      }
-    },
-  })
+  const stream = convertGroqStream(groqRes.body)
 
   return new Response(stream, {
     headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', ...corsHeaders(env) },

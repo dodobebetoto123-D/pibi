@@ -4,6 +4,7 @@
 import { firebaseAuth } from '../auth/firebase'
 import { store } from '../lib/store'
 import { workerChat, workerComplete } from './ai'
+import { parseInspection, parseSuggestedNotes } from './aiResults'
 import { buildSystemPrompt, buildInitMessage, buildInspectPrompt, buildSuggestPrompt } from '../lib/prompts'
 import { extractArtifacts } from '../lib/extractArtifacts'
 import type {
@@ -51,21 +52,7 @@ export const api = {
       store.notes.remove(projectId, noteId).then(() => ({ ok: true })),
     suggest: async (projectId: string, idea?: string): Promise<StickyNote[]> => {
       const { system, user } = buildSuggestPrompt(idea ?? '서비스 아이디어')
-      let notes = [
-        { content: `문제정의 : ${idea ?? '서비스 아이디어'} 관련 불편함 해소`, color: '#fef08a' },
-        { content: '핵심기능 : 사용자 친화적 원클릭 인터랙션', color: '#bbf7d0' },
-        { content: '해결방안 : AI 연동 자동화 프로세스', color: '#bfdbfe' },
-      ]
-      try {
-        const text = await workerComplete(system, user, 1024)
-        const match = text.match(/```json\r?\n([\s\S]*?)```/) || text.match(/\[[\s\S]*\]/)
-        if (match) {
-          const p = JSON.parse(match[1] || match[0])
-          if (Array.isArray(p)) notes = p
-        }
-      } catch {
-        return []
-      }
+      const notes = parseSuggestedNotes(await workerComplete(system, user, 1024))
       const created: StickyNote[] = []
       let offset = 40
       for (const n of notes) {
@@ -102,33 +89,7 @@ export const api = {
       if (!Number.isInteger(step) || step < 0 || step > 3)
         throw new Error('잘못된 단계입니다')
       const { system, user } = buildInspectPrompt(step, content, notes)
-      let parsed: { score: number; status: string; feedback: string[] } = {
-        score: 72,
-        status: 'needs_improvement',
-        feedback: [
-          '핵심 문제와 해결 아이디어가 잘 제시되었습니다.',
-          '실제 사용자의 행동 시나리오를 조금 더 구체화해보세요.',
-          '시연할 최소 기능 범위를 명확히 좁히면 개발이 훨씬 쉬워집니다.',
-        ],
-      }
-      try {
-        const text = await workerComplete(system, user, 1024)
-        const match = text.match(/```json\r?\n([\s\S]*?)```/) || text.match(/\{[\s\S]*\}/)
-        if (match) {
-          const p = JSON.parse(match[1] || match[0])
-          if (p.score && Array.isArray(p.feedback)) parsed = p
-        }
-      } catch {
-        parsed = {
-          score: 70,
-          status: 'needs_improvement',
-          feedback: [
-            '문제 정의가 잘 드러나 있습니다.',
-            '예외 처리와 사용자 피드백 문구를 보완해보세요.',
-            '핵심 기능의 우선순위를 명확히 정하면 좋습니다.',
-          ],
-        }
-      }
+      const parsed = parseInspection(await workerComplete(system, user, 1024))
       const saved = await store.inspections.upsert(project_id, step, parsed.score, parsed.status, parsed.feedback)
       return { ...saved, feedback: parsed.feedback }
     },
@@ -185,11 +146,6 @@ export const api = {
       // 사용자 메시지 저장 (기존 백엔드와 동일)
       await store.chat.add(project_id, { step, role: 'user', content: message })
 
-      // 3단계(개발)에서는 vibe 요청 기록도 저장
-      if (step === 3) {
-        await store.vibeRequests.add(project_id, { prompt: message, status: 'completed' })
-      }
-
       const system = buildSystemPrompt(step, context)
       const messages = [...history.map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content })), { role: 'user' as const, content: message }]
 
@@ -220,6 +176,9 @@ export const api = {
               y: 60 + offset,
             })
             offset += 50
+          }
+          if (step === 3) {
+            await store.vibeRequests.add(project_id, { prompt: message, status: 'completed' })
           }
           onDone()
         }

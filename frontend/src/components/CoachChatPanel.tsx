@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Send, Loader2, Bot, User, Mic, MicOff, Clock, Sparkles } from 'lucide-react'
+import { Send, Loader2, Bot, User, Mic, MicOff, Sparkles } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { api } from '../api/client'
 import type { ChatMessage, StepArtifact } from '../types'
@@ -39,25 +39,11 @@ export default function CoachChatPanel({
   const [loading, setLoading] = useState(false)
   const [streaming, setStreaming] = useState(false)
   const [streamText, setStreamText] = useState('')
+  const [chatError, setChatError] = useState('')
   const [isRecording, setIsRecording] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const recognitionRef = useRef<any>(null)
-
-  // Countdown timer state (e.g. hackathon countdown)
-  const [timeLeft, setTimeLeft] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0 })
-
-  useEffect(() => {
-    // Target 6 hours from session start
-    const timer = setInterval(() => {
-      // Just demo static or ticking down
-      setTimeLeft((prev) => {
-        if (prev.seconds > 0) return { ...prev, seconds: prev.seconds - 1 }
-        return { days: 0, hours: 0, minutes: 0, seconds: 0 }
-      })
-    }, 1000)
-    return () => clearInterval(timer)
-  }, [])
 
   useEffect(() => {
     setMessages(history.map((m) => ({ role: m.role, content: m.content })))
@@ -81,7 +67,6 @@ export default function CoachChatPanel({
         .then((res) => {
           const msg = { role: 'assistant' as const, content: res.message }
           setMessages([msg])
-          api.chat.save(projectId, { step, role: 'assistant', content: res.message })
         })
         .catch(console.error)
         .finally(() => setLoading(false))
@@ -93,6 +78,7 @@ export default function CoachChatPanel({
     const text = input.trim()
     if (!text || loading || streaming) return
     setInput('')
+    setChatError('')
     const userMsg = { role: 'user' as const, content: text }
     setMessages((prev) => [...prev, userMsg])
     setStreaming(true)
@@ -121,10 +107,7 @@ export default function CoachChatPanel({
       )
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : '⚠️ 오류가 발생했습니다. 다시 시도해주세요.'
-      setMessages((prev) => [
-        ...prev,
-        { role: 'assistant', content: `⚠️ ${errMsg}` },
-      ])
+      setChatError(errMsg)
       setStreaming(false)
       setStreamText('')
     }
@@ -177,36 +160,6 @@ export default function CoachChatPanel({
 
   return (
     <div className="flex flex-col h-full bg-white border-l border-gray-200 overflow-hidden">
-      {/* Top Countdown Timer Card */}
-      <div className="p-3 bg-white border-b border-gray-200 flex-shrink-0">
-        <div className="flex items-center justify-between text-xs font-semibold text-gray-500 mb-2">
-          <div className="flex items-center gap-1.5 text-gray-700">
-            <Clock size={13} className="text-gray-400" />
-            <span>시간 종료</span>
-          </div>
-          <span className="text-[10px] text-gray-400">세션 타이머</span>
-        </div>
-
-        <div className="grid grid-cols-4 gap-1.5 text-center">
-          <div className="bg-white p-1.5 rounded-[12px] border border-gray-200">
-            <span className="font-mono font-bold text-sm text-gray-800 block">00</span>
-            <span className="text-[9px] text-gray-400 font-medium">일</span>
-          </div>
-          <div className="bg-white p-1.5 rounded-[12px] border border-gray-200">
-            <span className="font-mono font-bold text-sm text-gray-800 block">00</span>
-            <span className="text-[9px] text-gray-400 font-medium">시간</span>
-          </div>
-          <div className="bg-white p-1.5 rounded-[12px] border border-gray-200">
-            <span className="font-mono font-bold text-sm text-gray-800 block">00</span>
-            <span className="text-[9px] text-gray-400 font-medium">분</span>
-          </div>
-          <div className="bg-white p-1.5 rounded-[12px] border border-gray-200">
-            <span className="font-mono font-bold text-sm text-gray-800 block">00</span>
-            <span className="text-[9px] text-gray-400 font-medium">초</span>
-          </div>
-        </div>
-      </div>
-
       {/* Chat Header */}
       <div className="px-4 py-2.5 border-b border-gray-100 flex items-center justify-between flex-shrink-0 bg-white">
         <div className="flex items-center gap-2">
@@ -303,6 +256,7 @@ export default function CoachChatPanel({
         </button>
       </div>
 
+      {chatError && <p role="alert" className="px-4 py-2 text-xs text-red-700">{chatError}</p>}
       {/* Input box */}
       <div className="p-3 bg-white border-t border-gray-100 flex-shrink-0">
         <div className="flex gap-2 items-end bg-gray-50 rounded-2xl border border-gray-200 p-2 focus-within:ring-2 focus-within:ring-blue-400 focus-within:border-blue-300 transition-all">

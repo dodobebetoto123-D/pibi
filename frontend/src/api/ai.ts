@@ -1,6 +1,7 @@
 // Cloudflare Worker(AI 프록시) 클라이언트.
 // GROQ_API_KEY는 Worker 쪽에만 있고, 여기는 Firebase ID 토큰으로 인증한다.
 import { firebaseAuth } from '../auth/firebase'
+import { readChatStream } from './chatStream'
 
 const WORKER_URL = import.meta.env.VITE_WORKER_URL as string | undefined
 
@@ -40,24 +41,7 @@ export async function workerChat(
     const errorJson = await res.json().catch(() => null)
     throw new Error(errorJson?.error || `AI 오류 (${res.status})`)
   }
-  const reader = res.body!.getReader()
-  const dec = new TextDecoder()
-  let buf = ''
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-    buf += dec.decode(value, { stream: true })
-    const lines = buf.split('\n')
-    buf = lines.pop() ?? ''
-    for (const line of lines) {
-      if (!line.startsWith('data:')) continue
-      const payload = line.slice(5).trim()
-      if (!payload) continue
-      const parsed = JSON.parse(payload)
-      if (parsed.text) onChunk(parsed.text)
-      if (parsed.done) await onDone()
-    }
-  }
+  await readChatStream(res.body, onChunk, onDone)
 }
 
 /** 비스트리밍 완성 — 검사/추천용 */

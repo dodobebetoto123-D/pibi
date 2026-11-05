@@ -18,10 +18,18 @@ export default function PipelinePlanEditor({ content, notes, onSave }: PipelineP
   const [isSaved, setIsSaved] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [remoteUpdate, setRemoteUpdate] = useState(false)
 
   useEffect(() => {
+    if (!isSaved && content !== text) {
+      setRemoteUpdate(true)
+      return
+    }
     setText(content)
     setIsSaved(true)
+    setRemoteUpdate(false)
+  // 서버 내용이 바뀐 경우에만 로컬 편집 내용을 확인한다.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [content])
 
   const insertText = (prefix: string, suffix: string = '') => {
@@ -30,11 +38,13 @@ export default function PipelinePlanEditor({ content, notes, onSave }: PipelineP
   }
 
   const handleSave = async () => {
+    if (remoteUpdate && !window.confirm('다른 곳에서 기획서가 변경되었습니다. 현재 편집 내용으로 덮어쓸까요?')) return
     setSaving(true)
     setError('')
     try {
       await onSave(text)
       setIsSaved(true)
+      setRemoteUpdate(false)
     } catch (err) {
       setError(err instanceof Error ? err.message : '저장하지 못했습니다. 다시 시도해주세요.')
     } finally {
@@ -195,6 +205,7 @@ export default function PipelinePlanEditor({ content, notes, onSave }: PipelineP
         </div>
       </fieldset>
       {error && <p role="alert" className="border-b border-red-200 bg-red-50 px-4 py-2 text-xs text-red-700">{error}</p>}
+      {remoteUpdate && <div role="status" className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-900">서버의 기획서가 변경되었습니다. 현재 편집 내용은 유지하고 있습니다. <button type="button" className="ml-2 underline" onClick={() => { if (window.confirm('현재 편집 내용을 버리고 서버의 기획서를 불러올까요?')) { setText(content); setIsSaved(true); setRemoteUpdate(false) } }}>서버 내용 불러오기</button></div>}
 
       {/* Editor / Preview Area */}
       <div className="flex-1 flex overflow-hidden">

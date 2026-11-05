@@ -29,6 +29,7 @@ export default function Workspace() {
   const [currentStep, setCurrentStep] = useState<number>(0)
   const [inspecting, setInspecting] = useState(false)
   const [suggestingNotes, setSuggestingNotes] = useState(false)
+  const [actionError, setActionError] = useState('')
   const [mobileChatOpen, setMobileChatOpen] = useState(false)
   const [inviteOpen, setInviteOpen] = useState(false)
   const [inviteEmail, setInviteEmail] = useState('')
@@ -46,7 +47,7 @@ export default function Workspace() {
   })
 
   // Project Info
-  const { data: project, isLoading: projectLoading } = useQuery({
+  const { data: project, isLoading: projectLoading, error: projectError, refetch: refetchProject } = useQuery({
     queryKey: ['project', id],
     queryFn: () => api.projects.get(id!),
     enabled: !!id,
@@ -81,7 +82,7 @@ export default function Workspace() {
   })
 
   // Chat History
-  const { data: chatHistory = [] } = useQuery({
+  const { data: chatHistory = [], isLoading: chatLoading, error: chatError } = useQuery({
     queryKey: ['chat', id, currentStep],
     queryFn: () => api.chat.history(id!, currentStep),
     enabled: !!id,
@@ -116,6 +117,7 @@ export default function Workspace() {
   const handleInspect = async () => {
     if (!id) return
     setInspecting(true)
+    setActionError('')
     try {
       const art = allArtifacts.find((a: StepArtifact) => a.step === currentStep)
       const noteContents = notes.map((n) => n.content)
@@ -127,7 +129,7 @@ export default function Workspace() {
       })
       await refetchInspection()
     } catch (err) {
-      console.error('Inspection failed:', err)
+      setActionError(err instanceof Error ? err.message : '사전 점검을 완료하지 못했습니다.')
     } finally {
       setInspecting(false)
     }
@@ -137,11 +139,12 @@ export default function Workspace() {
   const handleSuggestNotes = async () => {
     if (!id) return
     setSuggestingNotes(true)
+    setActionError('')
     try {
       await api.notes.suggest(id, project?.description || project?.name || '급식 대기열 인식 서비스')
       await refetchNotes()
     } catch (err) {
-      console.error('Failed to suggest notes:', err)
+      setActionError(err instanceof Error ? err.message : '메모를 추천하지 못했습니다.')
     } finally {
       setSuggestingNotes(false)
     }
@@ -159,7 +162,7 @@ export default function Workspace() {
 
   const currentStepArtifact = allArtifacts.find((a: StepArtifact) => a.step === currentStep)
 
-  if (projectLoading || !project) {
+  if (projectLoading) {
     return (
       <div className="h-screen flex items-center justify-center bg-gray-50">
           <div className="text-center">
@@ -168,6 +171,10 @@ export default function Workspace() {
         </div>
       </div>
     )
+  }
+
+  if (!project) {
+    return <div role="alert" className="flex h-screen items-center justify-center bg-gray-50 p-6 text-center"><div><p className="text-sm text-red-700">{projectError instanceof Error ? projectError.message : '프로젝트를 불러오지 못했습니다.'}</p><button onClick={() => void refetchProject()} className="mt-4 rounded-xl bg-blue-600 px-4 py-2 text-sm text-white">다시 시도</button><button onClick={() => navigate('/')} className="ml-3 text-sm text-gray-600">프로젝트 목록</button></div></div>
   }
 
   return (
@@ -321,6 +328,7 @@ export default function Workspace() {
           </nav>
 
           {/* AI Inspection Feedback Banner */}
+          {actionError && <div role="alert" className="border-b border-red-200 bg-red-50 px-5 py-3 text-sm text-red-700">{actionError}</div>}
           <InspectionBanner
             inspection={inspection ?? null}
             loading={inspecting}
@@ -370,7 +378,8 @@ export default function Workspace() {
 
         {/* Right Column: AI Coach (봄비) Chat & Timer */}
         <div className="hidden xl:flex w-80 flex-col flex-shrink-0 overflow-hidden bg-white">
-          <CoachChatPanel
+          {chatLoading ? <p className="p-4 text-sm text-gray-500">대화를 불러오는 중...</p> : chatError ? <p role="alert" className="p-4 text-sm text-red-700">대화를 불러오지 못했습니다. 페이지를 새로고침해 주세요.</p> : <CoachChatPanel
+            key={`${id}-${currentStep}`}
             projectId={id!}
             projectName={project.name}
             step={currentStep}
@@ -381,7 +390,7 @@ export default function Workspace() {
               refetchNotes()
               refetchRequests()
             }}
-          />
+          />}
         </div>
       </div>
 
@@ -412,7 +421,8 @@ export default function Workspace() {
               </button>
             </header>
             <div className="min-h-0 flex-1 overflow-hidden">
-              <CoachChatPanel
+              {chatLoading ? <p className="p-4 text-sm text-gray-500">대화를 불러오는 중...</p> : chatError ? <p role="alert" className="p-4 text-sm text-red-700">대화를 불러오지 못했습니다. 페이지를 새로고침해 주세요.</p> : <CoachChatPanel
+                key={`${id}-${currentStep}`}
                 projectId={id!}
                 projectName={project.name}
                 step={currentStep}
@@ -423,7 +433,7 @@ export default function Workspace() {
                   refetchNotes()
                   refetchRequests()
                 }}
-              />
+              />}
             </div>
           </section>
         </div>
